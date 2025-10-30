@@ -34,7 +34,8 @@ if "theme" not in st.session_state:
 # Theme selector in sidebar (or use st.selectbox somewhere in UI)
 with st.sidebar:
     st.markdown("### 🎨 Theme")
-    chosen = st.radio("", options=["Light", "Dark"], index=0 if st.session_state.theme == "Light" else 1)
+    chosen = st.radio("Theme", options=["Light", "Dark"],
+                  index=0 if st.session_state.theme == "Light" else 1)
     if chosen != st.session_state.theme:
         st.session_state.theme = chosen
 
