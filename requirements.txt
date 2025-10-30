@@ -1,0 +1,15 @@
+# Core Framework
+streamlit==1.39.0
+
+# Data Handling
+pandas==2.2.2
+numpy==1.26.4
+
+# Machine Learning
+scikit-learn==1.5.1
+
+# Time & Date Utilities
+python-dateutil==2.9.0
+
+# For parsing and compatibility
+urllib3==2.2.2
