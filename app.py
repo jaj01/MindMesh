@@ -1,267 +1,180 @@
-
-import streamlit as st
-import streamlit.components.v1 as components
-import pandas as pd
-import json
-from datetime import datetime, time as dt_time
-from io import StringIO
-from typing import List, Dict, Any, Set, Tuple
-import time as time_module
+# streamlit_app.py 
+import streamlit as st 
+import streamlit.components.v1 as components 
+import pandas as pd 
+import json 
+from datetime import datetime, time as dt_time 
+from io import StringIO 
+from typing import List, Dict, Any, Set, Tuple 
+import time as time_module 
 from urllib.parse import quote_plus
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
-
-# ---------- Utility Functions ----------
-def safe_rerun():
-    """Safe rerun compatible across Streamlit versions."""
-    try:
-        if hasattr(st, "experimental_rerun"):
-            st.experimental_rerun()
-            return
-    except Exception:
-        pass
-    try:
-        if hasattr(st, "rerun"):
-            st.rerun()
-            return
-    except Exception:
-        pass
-
-
-def format_time(seconds: int) -> str:
-    hrs = seconds // 3600
-    mins = (seconds % 3600) // 60
-    secs = seconds % 60
-    return f"{hrs:02d}:{mins:02d}:{secs:02d}"
-
-
-# ---------- Sample Dataset ----------
-SAMPLE_CSV = """id,title,tags,prereqs,difficulty,est_hours,resources
-t1,Computer Science Fundamentals,cs;fundamentals,,1,4,"article:CS Overview|url:https://en.wikipedia.org/wiki/Computer_science"
-t2,Python Basics,python;programming,t1,1,6,"video:Python Crash Course|url:https://www.python.org"
-t3,Data Structures,ds;algorithms,t1,3,8,"article:Intro to DS"
-t4,Algorithms: Sorting & Searching,algorithms;ds,t3,3,6,"video:Sorting Algorithms"
-t5,Web Development Basics,web;html;css,t1,2,6,"interactive:Build a page"
-t6,Machine Learning Intro,ml;data,t2;t3,4,10,"video:ML Intro"
-t7,SQL Basics,db;sql,t1,2,4,"article:SQL Tutorial"
-t8,Project: Build a ToDo App,project;web,t5,2,8,"interactive:Project Guide"
-"""
-_default_df = pd.read_csv(StringIO(SAMPLE_CSV))
-
-
-# ---------- Parsing Helpers ----------
-def parse_tags(cell):
-    if pd.isna(cell): return []
-    return [t.strip() for t in str(cell).split(';') if t.strip()]
-
-
-def parse_prereqs(cell):
-    if pd.isna(cell): return []
-    return [s.strip() for s in str(cell).split(';') if s.strip()]
-
-
-def parse_resources(cell):
-    if pd.isna(cell): return []
-    txt = str(cell).strip()
-    items = []
-    for part in txt.split('|'):
-        if ':' in part:
-            k, v = part.split(':', 1)
-            k, v = k.strip().lower(), v.strip()
-            if k == 'url':
-                if items:
-                    items[-1]['url'] = v
-                else:
-                    items.append({'type': 'link', 'title': v, 'url': v})
-            else:
-                items.append({'type': k, 'title': v})
-    return items
-
-
-def load_topics_from_df(df):
-    topics = []
-    for _, row in df.iterrows():
-        t = {
-            "id": row.get("id", ""),
-            "title": row.get("title", ""),
-            "tags": parse_tags(row.get("tags", "")),
-            "prereqs": parse_prereqs(row.get("prereqs", "")),
-            "difficulty": int(row.get("difficulty", 3)),
-            "est_hours": float(row.get("est_hours", 2.0)),
-            "resources": parse_resources(row.get("resources", ""))
-        }
-        topics.append(t)
-    return topics
-
-
-# ---------- ML Topic Ranking ----------
-def ml_rank_topics(topics: List[Dict[str, Any]], user_interest_text: str) -> List[Tuple[str, float]]:
-    corpus, topic_ids = [], []
-    for t in topics:
-        txt = f"{t.get('title', '')} " + " ".join(t.get('tags', [])) + " " + \
-              " ".join(r.get('title', '') for r in t.get('resources', []))
-        corpus.append(txt)
-        topic_ids.append(t['id'])
-    if not corpus:
-        return []
-
-    vectorizer = TfidfVectorizer(stop_words="english", lowercase=True)
-    tfidf_matrix = vectorizer.fit_transform(corpus)
-    if not user_interest_text.strip():
-        user_interest_text = "general learning"
-    user_vec = vectorizer.transform([user_interest_text])
-    sims = cosine_similarity(user_vec, tfidf_matrix).flatten()
-    ranked = sorted(zip(topic_ids, sims), key=lambda x: x[1], reverse=True)
-    return ranked
-
-
-# ---------- Path Generator ----------
-def topo_sort_with_prereqs(topics: List[Dict[str, Any]]) -> Tuple[List[str], bool]:
-    adj = {t['id']: t.get('prereqs', []) for t in topics}
-    visiting, order, cycle = {}, [], False
-
-    def dfs(u):
-        nonlocal cycle
-        if visiting.get(u, 0) == 1:
-            cycle = True
-            return
-        if visiting.get(u, 0) == 2:
-            return
-        visiting[u] = 1
-        for v in adj.get(u, []):
-            if v in adj:
-                dfs(v)
-        visiting[u] = 2
-        order.append(u)
-
-    for node in adj:
-        if visiting.get(node, 0) == 0:
-            dfs(node)
-    return list(reversed(order)), cycle
-
-
-def generate_path(topics, interests, skill_level, hours_per_week,
-                  max_seed=8, target_weeks=None, resource_types=None, require_resources=False):
-
-    by_id = {t['id']: t for t in topics}
-    interest_text = " ".join(interests)
-    ml_ranked = ml_rank_topics(topics, interest_text)
-    ml_scores = {tid: score for tid, score in ml_ranked}
-
-    def score_topic(t):
-        base = ml_scores.get(t['id'], 0.0) * 100
-        diff_penalty = max(0, t.get('difficulty', 3) - skill_level) * 3
-        return base - diff_penalty
-
-    scored = []
-    for t in topics:
-        if require_resources and resource_types:
-            rtypes = [r.get('type', '').lower() for r in t.get('resources', [])]
-            if not any(rt in rtypes for rt in resource_types):
-                continue
-        scored.append({**t, "score": score_topic(t)})
-
-    scored.sort(key=lambda x: x['score'], reverse=True)
-    seed = [t['id'] for t in scored[:max_seed]]
-
-    needed = set()
-    def include_rec(i):
-        if i in needed or i not in by_id: return
-        needed.add(i)
-        for p in by_id[i].get('prereqs', []):
-            include_rec(p)
-    for sid in seed:
-        include_rec(sid)
-
-    selected = [by_id[i] for i in needed]
-    ordered_ids, cycle = topo_sort_with_prereqs(selected)
-    ordered_topics = [by_id[i] for i in ordered_ids]
-
-    # schedule by weeks
-    total_hours = sum(t.get('est_hours', 2.0) for t in ordered_topics)
-    weeks = []
-    if target_weeks:
-        per_week = total_hours / target_weeks
-        weeks = [{"hours_left": per_week, "topics": []} for _ in range(target_weeks)]
-        wi = 0
-        for t in ordered_topics:
-            dur = t.get('est_hours', 2.0)
-            while dur > 0:
-                if wi >= len(weeks):
-                    weeks.append({"hours_left": per_week, "topics": []})
-                use = min(weeks[wi]['hours_left'], dur)
-                weeks[wi]['topics'].append({**t, "scheduled_hours": use})
-                weeks[wi]['hours_left'] -= use
-                dur -= use
-                if weeks[wi]['hours_left'] <= 0: wi += 1
-    return {"ordered": ordered_topics, "weeks": weeks, "meta": {"cycle": cycle}}
-
-
-# ---------- Streamlit App ----------
+# ---------- Streamlit App Layout ----------
 st.title("✨ Aurora – Personalized Learning Assistant")
-st.caption("Your personalized study planner with feedback, progress tracking, and ML-based topic recommendations.")
+st.caption("Your personalized study planner with feedback, progress tracking, and topic recommendations.")
 
-tab_onboard, tab_paths, tab_timer = st.tabs(["Onboarding", "Learning Path", "Timer"])
+# Main navigation
+tab_onboard, tab_paths, tab_timer = st.tabs(["🧭 Onboarding", "📚 Learning Path", "⏱️ Timer"])
 
-
-# ---------- Onboarding ----------
+# ------------------- ONBOARDING -------------------
 with tab_onboard:
-    st.header("Profile Setup")
+    st.subheader("Profile Setup")
+    st.markdown("Tell Aurora about your learning preferences to create your personalized schedule.")
+
     with st.form("onboard_form", clear_on_submit=False):
-        c1, c2 = st.columns(2)
-        with c1:
-            name = st.text_input("Full Name")
-            preferred_time = st.time_input("Preferred Study Time", value=dt_time(20, 30))
-            subject = st.text_input("Interest / Subject Area", placeholder="e.g., Machine Learning, Python")
-        with c2:
-            hours = st.selectbox("Session Hours", [0, 1, 2, 3, 4], index=1)
-            minutes = st.selectbox("Session Minutes", [0, 15, 30, 45], index=1)
-            duration_amount = st.number_input("Duration (weeks)", min_value=1, value=4)
-            repeat_per_week = st.slider("Sessions per week", 1, 14, 3)
-        goals = st.text_area("Learning Goals")
-        if st.form_submit_button("Save Profile"):
-            st.session_state.profile = {
-                "name": name, "preferred_time": preferred_time, "subject": subject,
-                "hours": hours, "minutes": minutes, "duration_amount": duration_amount,
-                "sessions_per_week": repeat_per_week, "goals": goals
-            }
-            st.success("Profile saved!")
+        col1, col2 = st.columns(2)
+        with col1:
+            name = st.text_input("👤 Full Name", placeholder="e.g., Shine Sara Mathew")
+            preferred_time = st.time_input("⏰ Preferred Study Time", value=dt_time(20, 30))
+            subject = st.selectbox(
+                "🎯 Interest / Subject Area",
+                [
+                    "Artificial Intelligence", "Web Development", "Biomaterials", "Medical Imaging",
+                    "Bioinformatics Biotechnology", "Nanobiotechnology", "Renewable Energy in Agriculture",
+                    "Geoinformatics and Remote Sensing in Agriculture", "Food Microbiology and Safety",
+                    "Emerging Areas in Food Processing", "Other"
+                ]
+            )
+            if subject == "Other":
+                subject = st.text_input("✏️ Specify Subject Area")
+        with col2:
+            st.markdown("**Session Preferences**")
+            hours = st.selectbox("⏳ Hours", [0, 1, 2, 3, 4, 5, 6], index=1)
+            minutes = st.selectbox("⏱️ Minutes", [0, 15, 30, 45], index=0)
+            duration_unit = st.selectbox("Duration Unit", ["Weeks", "Months"], index=0)
+            duration_amount = st.number_input("Duration Amount", min_value=1, max_value=52, value=4, step=1)
+            repeat_per_week = st.slider("Sessions per Week", 1, 14, 3)
 
-    if st.session_state.get("profile"):
-        st.json(st.session_state.profile)
+        goals = st.text_area("💭 Learning Goals", placeholder="E.g., build a project, revise daily, pass exams...")
+        submitted = st.form_submit_button("💾 Save Profile")
 
+        if submitted:
+            if not name:
+                st.error("⚠️ Please enter your name")
+            elif hours == 0 and minutes == 0:
+                st.error("⚠️ Please set a session length greater than 0")
+            else:
+                st.session_state.profile = {
+                    'name': name, 'preferred_time': preferred_time, 'subject': subject,
+                    'hours': hours, 'minutes': minutes, 'duration_amount': duration_amount,
+                    'duration_unit': duration_unit, 'sessions_per_week': repeat_per_week, 'goals': goals
+                }
+                st.success("✅ Profile saved successfully! Go to **Learning Path** to generate your plan.")
 
-# ---------- Learning Path ----------
+    if st.session_state.profile:
+        with st.expander("📋 Current Profile Summary"):
+            st.json(st.session_state.profile, expanded=False)
+
+# ------------------- LEARNING PATH -------------------
 with tab_paths:
-    st.header("Generate Personalized Path")
-    profile = st.session_state.get("profile")
-    if profile:
-        interests = [x.strip() for x in profile['subject'].split(',')]
-        skill_level = st.slider("Skill Level", 1, 5, 3)
-        resource_types = st.multiselect("Resource Types", ["video", "article", "interactive"], ["video", "article"])
-        if st.button("Generate Path"):
+    st.subheader("Generate Your Learning Path")
+    st.markdown("Aurora recommends study topics and resources based on your interests and skill level.")
+
+    # Generate path controls
+    left_col, right_col = st.columns([2, 1])
+    with left_col:
+        profile = st.session_state.get("profile")
+        if profile:
+            default_interest = profile.get("subject", "")
+            target_weeks = profile['duration_amount'] if profile['duration_unit'] == "Weeks" else profile['duration_amount'] * 4
+            hours_per_week = max(1.0, profile['hours'] + profile['minutes'] / 60.0) * profile['sessions_per_week']
+        else:
+            default_interest, target_weeks, hours_per_week = "", 4, 6.0
+
+        interests_input = st.text_input("💡 Your Interests (comma separated)", value=default_interest)
+        skill_level = st.slider("🧠 Skill Level", 1, 5, 3)
+        interests = [i.strip() for i in interests_input.split(",") if i.strip()]
+    with right_col:
+        resource_types = st.multiselect("🎥 Resource Types", ["video", "article", "interactive", "other"], default=["video", "article", "interactive"])
+        require_resources = st.checkbox("Require topics with chosen resource types", value=False)
+        max_seed = st.number_input("Topic Breadth (Top N)", 1, 20, 8)
+
+        if st.button("🚀 Generate Learning Path"):
             topics = load_topics_from_df(_default_df)
             res = generate_path(
-                topics, interests, skill_level,
-                hours_per_week=profile['hours'] * profile['sessions_per_week'],
-                max_seed=8, target_weeks=profile['duration_amount'],
-                resource_types=resource_types
+                topics, interests, skill_level, hours_per_week,
+                max_seed, target_weeks, [r.lower() for r in resource_types], require_resources
             )
             st.session_state.last_result = res
-            st.success("Path generated successfully!")
+            st.success("🎯 Path generated successfully! Scroll down to explore your topics.")
 
-    if st.session_state.get("last_result"):
+    # Display generated path
+    if st.session_state.last_result:
         res = st.session_state.last_result
-        for i, t in enumerate(res["ordered"], 1):
-            with st.expander(f"{i}. {t['title']}"):
-                st.write("Tags:", ", ".join(t['tags']))
-                for r in t.get("resources", []):
+        ordered, weeks = res["ordered"], res["weeks"]
+
+        st.divider()
+        st.markdown("### 🧩 Recommended Topics (Ordered)")
+
+        for i, t in enumerate(ordered, 1):
+            with st.expander(f"{i}. {t['title']} ({t.get('est_hours', '?')} hrs)"):
+                st.write("**Tags:**", ", ".join(t.get('tags', [])) or "_None_")
+                st.write("**Prerequisites:**", ", ".join(t.get('prereqs', [])) or "_None_")
+
+                for r_idx, r in enumerate(t.get("resources", [])):
                     url = r.get("url") or f"https://www.google.com/search?q={quote_plus(r.get('title',''))}"
-                    st.markdown(f"- **{r.get('type','').title()}**: [{r.get('title','')}]({url})")
+                    colA, colB = st.columns([4, 1])
+                    with colA:
+                        st.markdown(f"- **{r.get('type','').title()}**: [{r.get('title','')}]({url})")
+                    with colB:
+                        if st.button("Open & Start", key=f"start_{i}_{r_idx}"):
+                            start_session_with_url(url, t['title'], r.get('title'))
 
+        st.divider()
+        st.markdown("### 🗓️ Weekly Plan Overview")
+        for idx, week in enumerate(weeks):
+            st.markdown(f"**Week {idx+1}:**")
+            if not week["topics"]:
+                st.write("_No topics assigned this week._")
+            for tt in week["topics"]:
+                st.write(f"- {tt['title']} ({round(tt.get('scheduled_hours',0),1)} hrs)")
 
-# ---------- Timer ----------
+        st.download_button("📥 Download Path (JSON)", json.dumps(res, indent=2), "study_path.json")
+
+# ------------------- TIMER -------------------
 with tab_timer:
-    st.header("Study Timer")
-    st.info("Timer functionality placeholder (from your previous code).")
+    profile = st.session_state.get("profile")
+    st.subheader("⏱️ Study Session Timer")
+
+    if not profile:
+        st.info("Please complete onboarding and generate a path to start learning.")
+    else:
+        total_time = (profile["hours"] * 3600) + (profile["minutes"] * 60)
+        if st.session_state.timer_running and st.session_state.start_time:
+            elapsed = (datetime.now() - st.session_state.start_time).total_seconds()
+            current_time_left = max(0, int(st.session_state.time_left - elapsed))
+            if current_time_left <= 0:
+                st.session_state.show_celebration = True
+                st.session_state.timer_running = False
+                st.balloons()
+        else:
+            current_time_left = st.session_state.time_left
+
+        if not st.session_state.show_celebration:
+            st.markdown(f"### ⏰ {format_time(current_time_left)} remaining")
+            status = "🟢 Running" if st.session_state.timer_running else "⏸️ Paused"
+            st.caption(status)
+            progress = 1 - (current_time_left / total_time) if total_time > 0 else 0
+            st.progress(progress)
+            c1, c2, c3 = st.columns(3)
+            with c2:
+                if st.button("⏯ Pause / Resume"):
+                    pause_timer()
+                if st.button("🔁 Reset Timer"):
+                    reset_timer()
+        else:
+            st.success("🎉 Session Completed!")
+            st.write("How did you feel about your learning experience?")
+            cols = st.columns(5)
+            emojis = ["😃", "🙂", "😐", "😣", "😭"]
+            labels = ["Loved it", "Good", "Okay", "Struggled", "Too hard"]
+            for i, (e, l) in enumerate(zip(emojis, labels)):
+                with cols[i]:
+                    if st.button(f"{e} {l}", key=f"f_{i}"):
+                        st.session_state.feedbacks.append({"feeling": l, "timestamp": datetime.utcnow().isoformat()})
+                        st.success("Feedback recorded!")
+
+# Auto-refresh
+if st.session_state.timer_running:
+    time_module.sleep(1)
+    safe_rerun()
