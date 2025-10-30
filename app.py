@@ -8,13 +8,15 @@ from io import StringIO
 from typing import List, Dict, Any, Set, Tuple 
 import time as time_module 
 from urllib.parse import quote_plus
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # ---------- Streamlit App Layout ----------
 st.title("✨ Aurora – Personalized Learning Assistant")
 st.caption("Your personalized study planner with feedback, progress tracking, and topic recommendations.")
 
 # Main navigation
-tab_onboard, tab_paths, tab_timer = st.tabs(["🧭 Onboarding", "📚 Learning Path", "⏱️ Timer"])
+tab_onboard, tab_paths, tab_timer = st.tabs(["Onboarding", "Learning Path", "Timer"])
 
 # ------------------- ONBOARDING -------------------
 with tab_onboard:
@@ -24,7 +26,7 @@ with tab_onboard:
     with st.form("onboard_form", clear_on_submit=False):
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("👤 Full Name", placeholder="e.g., Shine Sara Mathew")
+            name = st.text_input(" Full Name", placeholder="e.g., Shine Sara Mathew")
             preferred_time = st.time_input("⏰ Preferred Study Time", value=dt_time(20, 30))
             subject = st.selectbox(
                 "🎯 Interest / Subject Area",
@@ -36,7 +38,7 @@ with tab_onboard:
                 ]
             )
             if subject == "Other":
-                subject = st.text_input("✏️ Specify Subject Area")
+                subject = st.text_input("Specify Subject Area")
         with col2:
             st.markdown("**Session Preferences**")
             hours = st.selectbox("⏳ Hours", [0, 1, 2, 3, 4, 5, 6], index=1)
@@ -62,7 +64,7 @@ with tab_onboard:
                 st.success("✅ Profile saved successfully! Go to **Learning Path** to generate your plan.")
 
     if st.session_state.profile:
-        with st.expander("📋 Current Profile Summary"):
+        with st.expander("Current Profile Summary"):
             st.json(st.session_state.profile, expanded=False)
 
 # ------------------- LEARNING PATH -------------------
@@ -88,13 +90,142 @@ with tab_paths:
         resource_types = st.multiselect("🎥 Resource Types", ["video", "article", "interactive", "other"], default=["video", "article", "interactive"])
         require_resources = st.checkbox("Require topics with chosen resource types", value=False)
         max_seed = st.number_input("Topic Breadth (Top N)", 1, 20, 8)
+def ml_rank_topics(topics: List[Dict[str, Any]], user_interest_text: str) -> List[Tuple[str, float]]:
+    """
+    Compute semantic relevance scores using TF-IDF + cosine similarity.
+    Returns a list of (topic_id, similarity_score) sorted descending.
+    """
+    corpus, topic_ids = [], []
+    for t in topics:
+        txt = f"{t.get('title','')} " + " ".join(t.get('tags', [])) + " " + \
+              " ".join(r.get('title','') for r in t.get('resources', []))
+        corpus.append(txt)
+        topic_ids.append(t['id'])
+
+    if not corpus:
+        return []
+
+    vectorizer = TfidfVectorizer(stop_words="english", lowercase=True)
+    tfidf_matrix = vectorizer.fit_transform(corpus)
+
+    if not user_interest_text.strip():
+        user_interest_text = "general learning"
+    user_vec = vectorizer.transform([user_interest_text])
+
+    sims = cosine_similarity(user_vec, tfidf_matrix).flatten()
+    ranked = sorted(zip(topic_ids, sims), key=lambda x: x[1], reverse=True)
+    return ranked
 
         if st.button("🚀 Generate Learning Path"):
             topics = load_topics_from_df(_default_df)
-            res = generate_path(
-                topics, interests, skill_level, hours_per_week,
-                max_seed, target_weeks, [r.lower() for r in resource_types], require_resources
-            )
+            res = def generate_path(topics: List[Dict[str, Any]], interests: List[str], skill_level: int,
+                  hours_per_week: float, max_seed=8, target_weeks: int = None,
+                  resource_types: List[str] = None, require_resources: bool = False):
+
+    by_id = {t['id']: t for t in topics}
+
+    # Combine user interests into a single text string
+    interest_text = " ".join(interests)
+    ml_ranked = ml_rank_topics(topics, interest_text)
+    ml_scores = {tid: score for tid, score in ml_ranked}
+
+    # Combine ML similarity + difficulty penalty
+    def score_topic(t):
+        base = ml_scores.get(t['id'], 0.0) * 100
+        diff_penalty = max(0, t.get('difficulty', 3) - skill_level) * 3
+        return base - diff_penalty
+
+    scored = []
+    for t in topics:
+        if require_resources and resource_types:
+            rtypes = [r.get('type', '').lower() for r in t.get('resources', [])]
+            if not any(rt in rtypes for rt in resource_types):
+                continue
+        s = score_topic(t)
+        scored.append({**t, "score": s})
+
+    # Sort by ML relevance
+    scored.sort(key=lambda x: x['score'], reverse=True)
+
+    # Pick seeds
+    seed = []
+    for t in scored:
+        if len(seed) < max_seed:
+            seed.append(t['id'])
+
+    # Include prerequisites recursively
+    needed: Set[str] = set()
+    def include_rec(id_):
+        if id_ in needed: return
+        if id_ not in by_id: return
+        needed.add(id_)
+        for p in by_id[id_].get('prereqs', []):
+            include_rec(p)
+    for sid in seed:
+        include_rec(sid)
+
+    selected = [by_id[i] for i in needed if i in by_id]
+    ordered_ids, cycle = topo_sort_with_prereqs(selected)
+    ordered = [oid for oid in ordered_ids if oid in by_id and oid in needed]
+    ordered_topics = [by_id[i] for i in ordered]
+
+    # --- Weekly scheduling logic (keep same as before) ---
+    weeks = []
+    total_hours = sum(float(t.get('est_hours', 0)) for t in ordered_topics)
+    if target_weeks and target_weeks > 0:
+        per_week = total_hours / target_weeks if total_hours > 0 else max(1.0, hours_per_week)
+        weeks = [{"hours_left": per_week, "topics": []} for _ in range(target_weeks)]
+        week_idx = 0
+        for t in ordered_topics:
+            dur = float(t.get('est_hours', 2.0))
+            remaining = dur
+            while remaining > 0:
+                if week_idx >= len(weeks):
+                    weeks.append({"hours_left": 0.0, "topics": []})
+                capacity = weeks[week_idx]['hours_left']
+                if capacity <= 0:
+                    week_idx += 1
+                    continue
+                use = min(remaining, capacity)
+                note = "start" if remaining == dur and remaining > use else \
+                       ("continue" if remaining > use else "finish")
+                weeks[week_idx]['topics'].append({**t, "scheduled_hours": use, "note": note})
+                weeks[week_idx]['hours_left'] -= use
+                remaining -= use
+                if weeks[week_idx]['hours_left'] <= 1e-6:
+                    week_idx += 1
+    else:
+        current_week = {"hours_left": hours_per_week, "topics": []}
+        for t in ordered_topics:
+            dur = float(t.get('est_hours', 2.0))
+            if dur <= current_week['hours_left']:
+                current_week['topics'].append({**t, "scheduled_hours": dur})
+                current_week['hours_left'] -= dur
+            else:
+                if current_week['topics']:
+                    weeks.append(current_week)
+                    current_week = {"hours_left": hours_per_week, "topics": []}
+                remaining = dur
+                first = True
+                while remaining > 0:
+                    use = min(remaining, current_week['hours_left'] if current_week['hours_left']>0 else hours_per_week)
+                    note = "start" if first and remaining>use else \
+                           ("continue" if remaining>use else "finish")
+                    current_week['topics'].append({**t, "scheduled_hours": use, "note": note})
+                    remaining -= use
+                    current_week['hours_left'] -= use
+                    first = False
+                    if remaining > 0:
+                        weeks.append(current_week)
+                        current_week = {"hours_left": hours_per_week, "topics": []}
+        if current_week['topics']:
+            weeks.append(current_week)
+
+    meta = {"generated_at": datetime.utcnow().isoformat() + "Z", "skill_level": skill_level,
+            "hours_per_week": hours_per_week, "target_weeks": target_weeks,
+            "resource_types": resource_types, "require_resources": require_resources}
+    return {"ordered": ordered_topics, "weeks": weeks, "meta": meta, "cycle_detected": cycle}
+
             st.session_state.last_result = res
             st.success("🎯 Path generated successfully! Scroll down to explore your topics.")
 
@@ -104,7 +235,7 @@ with tab_paths:
         ordered, weeks = res["ordered"], res["weeks"]
 
         st.divider()
-        st.markdown("### 🧩 Recommended Topics (Ordered)")
+        st.markdown("### Recommended Topics (Ordered)")
 
         for i, t in enumerate(ordered, 1):
             with st.expander(f"{i}. {t['title']} ({t.get('est_hours', '?')} hrs)"):
