@@ -9,6 +9,24 @@ from typing import List, Dict, Any, Set, Tuple
 import time as time_module 
 from urllib.parse import quote_plus
 
+# --- Initialize all session state keys ---
+if "profile" not in st.session_state:
+    st.session_state.profile = None
+if "timer_running" not in st.session_state:
+    st.session_state.timer_running = False
+if "time_left" not in st.session_state:
+    st.session_state.time_left = 0
+if "start_time" not in st.session_state:
+    st.session_state.start_time = None
+if "paused_time" not in st.session_state:
+    st.session_state.paused_time = 0
+if "show_celebration" not in st.session_state:
+    st.session_state.show_celebration = False
+if "feedbacks" not in st.session_state:
+    st.session_state.feedbacks = []
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
+
 # ---------- Streamlit App Layout ----------
 st.title("✨ Aurora – Personalized Learning Assistant")
 st.caption("Your personalized study planner with feedback, progress tracking, and topic recommendations.")
