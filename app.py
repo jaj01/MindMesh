@@ -82,6 +82,9 @@ st.caption("Your personalized study planner with feedback, progress tracking, an
 # ----------------- Helper functions (PASTE THIS BEFORE YOUR UI / tabs) -----------------
 
 from io import StringIO
+
+default_df = pd.read_csv("hackethon.csv", encoding="utf-8", engine="python", on_bad_lines="skip")
+
 from datetime import datetime
 
 def format_time(seconds: int) -> str:
