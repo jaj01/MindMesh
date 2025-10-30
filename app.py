@@ -90,31 +90,31 @@ with tab_paths:
         resource_types = st.multiselect("🎥 Resource Types", ["video", "article", "interactive", "other"], default=["video", "article", "interactive"])
         require_resources = st.checkbox("Require topics with chosen resource types", value=False)
         max_seed = st.number_input("Topic Breadth (Top N)", 1, 20, 8)
-def ml_rank_topics(topics: List[Dict[str, Any]], user_interest_text: str) -> List[Tuple[str, float]]:
-    """
-    Compute semantic relevance scores using TF-IDF + cosine similarity.
-    Returns a list of (topic_id, similarity_score) sorted descending.
-    """
-    corpus, topic_ids = [], []
-    for t in topics:
-        txt = f"{t.get('title','')} " + " ".join(t.get('tags', [])) + " " + \
-              " ".join(r.get('title','') for r in t.get('resources', []))
-        corpus.append(txt)
-        topic_ids.append(t['id'])
-
-    if not corpus:
-        return []
-
-    vectorizer = TfidfVectorizer(stop_words="english", lowercase=True)
-    tfidf_matrix = vectorizer.fit_transform(corpus)
-
-    if not user_interest_text.strip():
-        user_interest_text = "general learning"
-    user_vec = vectorizer.transform([user_interest_text])
-
-    sims = cosine_similarity(user_vec, tfidf_matrix).flatten()
-    ranked = sorted(zip(topic_ids, sims), key=lambda x: x[1], reverse=True)
-    return ranked
+    def ml_rank_topics(topics: List[Dict[str, Any]], user_interest_text: str) -> List[Tuple[str, float]]:
+        """
+        Compute semantic relevance scores using TF-IDF + cosine similarity.
+        Returns a list of (topic_id, similarity_score) sorted descending.
+        """
+        corpus, topic_ids = [], []
+        for t in topics:
+            txt = f"{t.get('title','')} " + " ".join(t.get('tags', [])) + " " + \
+                  " ".join(r.get('title','') for r in t.get('resources', []))
+            corpus.append(txt)
+            topic_ids.append(t['id'])
+    
+        if not corpus:
+            return []
+    
+        vectorizer = TfidfVectorizer(stop_words="english", lowercase=True)
+        tfidf_matrix = vectorizer.fit_transform(corpus)
+    
+        if not user_interest_text.strip():
+            user_interest_text = "general learning"
+        user_vec = vectorizer.transform([user_interest_text])
+    
+        sims = cosine_similarity(user_vec, tfidf_matrix).flatten()
+        ranked = sorted(zip(topic_ids, sims), key=lambda x: x[1], reverse=True)
+        return ranked
 
         if st.button("🚀 Generate Learning Path"):
             topics = load_topics_from_df(_default_df)
