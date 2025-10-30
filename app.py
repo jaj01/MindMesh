@@ -1,3 +1,14 @@
+# streamlit_app.py 
+import streamlit as st 
+import streamlit.components.v1 as components 
+import pandas as pd 
+import json from datetime 
+import datetime, time as dt_time from io 
+import StringIO from typing 
+import List, Dict, Any, Set, Tuple 
+import time as time_module 
+from urllib.parse import quote_plus
+
 # ---------- Streamlit App Layout ----------
 st.title("✨ Aurora – Personalized Learning Assistant")
 st.caption("Your personalized study planner with feedback, progress tracking, and topic recommendations.")
