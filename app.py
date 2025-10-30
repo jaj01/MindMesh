@@ -27,6 +27,58 @@ if "feedbacks" not in st.session_state:
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
+st.markdown("""
+<style>
+/* Overall app background */
+.stApp {
+    background: linear-gradient(160deg, #f8ede3 0%, #d6ad60 100%);
+    color: #3e2c23;
+    font-family: 'Georgia', serif;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab"] {
+    background-color: #f0d9b5;
+    color: #3e2c23;
+    border-radius: 10px 10px 0 0;
+    padding: 10px 20px;
+    margin-right: 4px;
+    font-weight: 600;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background-color: #a0522d;
+    color: white;
+}
+
+/* Buttons */
+.stButton>button {
+    background-color: #a0522d !important;
+    color: #fff !important;
+    font-weight: 600;
+    border-radius: 10px;
+    border: none;
+    padding: 10px 20px;
+}
+.stButton>button:hover {
+    background-color: #8b3c15 !important;
+}
+
+/* Headers */
+h1, h2, h3, h4 {
+    color: #5c3317;
+}
+
+/* Forms and expanders */
+div[data-testid="stForm"], .stExpander {
+    background-color: rgba(255, 248, 240, 0.85);
+    border-radius: 15px;
+    padding: 20px;
+    border: 1px solid #d6ad60;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 # ---------- Streamlit App Layout ----------
 st.title("✨ Aurora – Personalized Learning Assistant")
 st.caption("Your personalized study planner with feedback, progress tracking, and topic recommendations.")
@@ -42,7 +94,7 @@ with tab_onboard:
     with st.form("onboard_form", clear_on_submit=False):
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("👤 Full Name", placeholder="e.g., Shine Sara Mathew")
+            name = st.text_input("👤 Full Name", placeholder="Your name")
             preferred_time = st.time_input("⏰ Preferred Study Time", value=dt_time(20, 30))
             subject = st.selectbox(
                 "🎯 Interest / Subject Area",
