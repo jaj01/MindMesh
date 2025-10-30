@@ -32,7 +32,7 @@ st.markdown("""
 /* Overall app background */
 .stApp {
     background: linear-gradient(160deg, #f8ede3 0%, #d6ad60 100%);
-    color: #3e2c23;
+    color: #3E2C23;
     font-family: 'Georgia', serif;
 }
 
