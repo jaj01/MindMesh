@@ -29,16 +29,67 @@ if "last_result" not in st.session_state:
 
 st.markdown("""
 <style>
-/* Overall app background */
+/* --- Aurora Theme Enhancements --- */
+
+/* Background gradient */
 .stApp {
-    background: linear-gradient(160deg, #f8ede3 0%, #d6ad60 100%);
-    color: #3E2C23;
+    background: linear-gradient(160deg, #f9e7d1 0%, #d8b67a 100%);
+    color: #3e2c23;
     font-family: 'Georgia', serif;
+}
+
+/* Card-style containers */
+div[data-testid="stForm"], .stExpander {
+    background-color: rgba(255, 248, 240, 0.9);
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid #e2c59b;
+    box-shadow: 0 4px 12px rgba(139,69,19,0.15);
+}
+
+/* Inputs and dropdowns */
+.stTextInput>div>div>input, 
+.stSelectbox>div>div>div,
+.stTextArea>div>div>textarea,
+.stTimeInput>div>div>input {
+    background-color: #fffaf4;
+    color: #3e2c23;
+    border-radius: 10px;
+    border: 1px solid #d6ad60;
+    padding: 8px 12px;
+}
+.stTextInput>div>div>input:focus,
+.stSelectbox>div>div>div:hover {
+    border-color: #a0522d;
+}
+
+/* Labels */
+label, .stMarkdown p, .stSlider label {
+    color: #4a2e12 !important;
+    font-weight: 600 !important;
+}
+
+/* Slider */
+.stSlider [data-baseweb="slider"] {
+    color: #a0522d;
+}
+
+/* Buttons */
+.stButton>button {
+    background-color: #a0522d !important;
+    color: #fff !important;
+    font-weight: 600;
+    border-radius: 10px;
+    border: none;
+    padding: 10px 24px;
+}
+.stButton>button:hover {
+    background-color: #8b3c15 !important;
 }
 
 /* Tabs */
 .stTabs [data-baseweb="tab"] {
-    background-color: #f0d9b5;
+    background-color: #f5e3c5;
     color: #3e2c23;
     border-radius: 10px 10px 0 0;
     padding: 10px 20px;
@@ -50,30 +101,22 @@ st.markdown("""
     color: white;
 }
 
-/* Buttons */
-.stButton>button {
-    background-color: #a0522d !important;
-    color: #fff !important;
-    font-weight: 600;
-    border-radius: 10px;
-    border: none;
-    padding: 10px 20px;
-}
-.stButton>button:hover {
-    background-color: #8b3c15 !important;
-}
-
-/* Headers */
-h1, h2, h3, h4 {
+/* Titles */
+h1, h2, h3 {
     color: #5c3317;
 }
 
-/* Forms and expanders */
-div[data-testid="stForm"], .stExpander {
-    background-color: rgba(255, 248, 240, 0.85);
-    border-radius: 15px;
-    padding: 20px;
-    border: 1px solid #d6ad60;
+/* Scrollbar styling (for long sections) */
+::-webkit-scrollbar {
+    width: 10px;
+}
+::-webkit-scrollbar-track {
+    background: #f4e2c6;
+    border-radius: 8px;
+}
+::-webkit-scrollbar-thumb {
+    background-color: #a0522d;
+    border-radius: 8px;
 }
 </style>
 """, unsafe_allow_html=True)
