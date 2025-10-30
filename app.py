@@ -43,13 +43,25 @@ def parse_resources(cell: Any) -> List[Dict[str,str]]:
 def load_topics_from_df(df: pd.DataFrame) -> List[Dict[str,Any]]:
     topics = []
     for _, row in df.iterrows():
+        # Safe parse of difficulty
+        try:
+            diff = int(row.get("difficulty")) if not pd.isna(row.get("difficulty")) else 3
+        except ValueError:
+            diff = 3
+
+        # Safe parse of estimated hours
+        try:
+            est = float(row.get("est_hours")) if not pd.isna(row.get("est_hours")) else 2.0
+        except ValueError:
+            est = 2.0  # fallback default if bad data
+
         t = {
             "id": str(row.get("id")).strip(),
             "title": str(row.get("title")),
             "tags": parse_tags(row.get("tags")),
             "prereqs": parse_prereqs(row.get("prereqs")),
-            "difficulty": int(row.get("difficulty")) if not pd.isna(row.get("difficulty")) else 3,
-            "est_hours": float(row.get("est_hours")) if not pd.isna(row.get("est_hours")) else 2.0,
+            "difficulty": diff,
+            "est_hours": est,
             "resources": parse_resources(row.get("resources")) if "resources" in df.columns else []
         }
         topics.append(t)
